@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice ChatBot</title>
+    <style>
+        .message {
+            margin-bottom: 10px;
+        }
+
+        .user {
+            font-weight: bold;
+        }
+
+        .bot {
+            color: #333;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // Function to handle voice input
+        function startSpeechRecognition() {
+            const recognition = new webkitSpeechRecognition();
+            recognition.lang = 'en-US';
+
+            recognition.onresult = function(event) {
+                const result = event.results[0][0].transcript;
+                document.getElementById('text').value = result;
+                document.getElementById('response').textContent = '';
+                document.getElementById('chatForm').submit();
+            }
+
+            recognition.start();
+        }
+
+        // Function to clear the input field and response area
+        function clearForm() {
+            document.getElementById('text').value = '';
+            document.getElementById('response').textContent = '';
+        }
+    </script>
+</head>
+<body>
+    <h1>Voice ChatBot</h1>
+    <form id="chatForm" method="POST">
+        <input type="text" id="text" name="text" placeholder="Enter your message" required>
+        <input type="submit" value="Submit">
+        <button type="button" onclick="startSpeechRecognition()">Voice Input</button>
+        <button type="button" onclick="clearForm()">Clear</button>
+    </form>
+    <div id="chatHistory">
+        {% if response %}
+            <div class="message">
+                <span class="bot">Bot:</span> {{ response }}
+            </div>
+        {% endif %}
+    </div>
+    {% if error %}
+        <p>{{ error }}</p>
+    {% endif %}
+
+    <script>
+        // Function to handle form submission and display response
+        $('#chatForm').submit(function(event) {
+            event.preventDefault();
+
+            $.ajax({
+                type: 'POST',
+                url: '/',
+                data: $(this).serialize(),
+                success: function(response) {
+                var userCommand = '<div class="message"><span class="user">You:</span> ' + $('#text').val() + '</div>';
+                var botResponse = '<div class="message"><span class="bot">Bot:</span> ' + response.response + '</div>';
+                $('#chatHistory').append(userCommand);
+                $('#chatHistory').append(botResponse);
+                $('#response').text('');
+                $('#text').val('');
+            },
+
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
