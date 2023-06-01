@@ -12,8 +12,59 @@ import requests
 import base64
 import re
 
+
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
+
+
+def get_incident_tickets():
+    url = "https://dev89134.service-now.com/api/now/table/incident"
+
+    headers = {
+        "Accept": "application/json",
+        "Authorization": "Basic " + base64.b64encode(f"admin:1/1YRrg^pwKO".encode()).decode()
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            tickets = response.json().get('result', [])
+            return tickets
+        else:
+            logger.error("Error retrieving incident tickets: %s", response.text)
+            return []
+    except requests.exceptions.RequestException as e:
+        logger.error("An error occurred while retrieving incident tickets: %s", str(e))
+        return []
+
+
+def get_incident_ticket(ticket_number):
+    url = "https://dev89134.service-now.com/api/now/table/incident"
+
+    headers = {
+        "Accept": "application/json",
+        "Authorization": "Basic " + base64.b64encode(f"admin:1/1YRrg^pwKO".encode()).decode()
+    }
+
+    params = {
+        "sysparm_query": f"number={ticket_number}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            tickets = response.json().get('result', [])
+            if tickets:
+                return tickets[0]  # Return the first ticket
+            else:
+                logger.info("Ticket not found: %s", ticket_number)
+                return None
+        else:
+            logger.error("Error retrieving incident ticket: %s", response.text)
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error("An error occurred while retrieving incident ticket: %s", str(e))
+        return None
 
 
 class ChatBot():
@@ -49,34 +100,8 @@ class ChatBot():
     def action_time():
         return datetime.datetime.now().time().strftime('%H:%M')
 
-    @staticmethod
-    def extract_ticket_number(text):
-        match = re.search(r'\b([A-Za-z]+\d+)\b', text)
-        if match:
-            return match.group(1)
-        else:
-            return None
-
-    @staticmethod
-    def get_incident_ticket(ticket_number):
-        url = f"https://dev89134.service-now.com/api/now/table/incident?number={ticket_number}"
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": "Basic " + base64.b64encode(f"admin:1/1YRrg^pwKO".encode()).decode()
-        }
-
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()  # Raise an exception for non-2xx status codes
-            ticket = response.json().get('result')
-            return ticket
-        except requests.exceptions.RequestException as e:
-            logger.error("An error occurred while retrieving incident ticket: %s", str(e))
-            return None
-
     def process_user_request(self, user_input):
-        if self.wake_up(user_input) is True:
+        if self.wake_up(user_input):
             return "Hello, I am Dave the AI. What can I do for you?"
         elif "time" in user_input:
             return self.action_time()
@@ -85,15 +110,15 @@ class ChatBot():
         elif any(i in user_input for i in ["exit", "close"]):
             return np.random.choice(["Tata", "Have a good day", "Bye", "Goodbye", "Hope to meet soon", "peace out!"])
         elif any(i in user_input for i in ["incident", "tickets"]):
-            ticket_number = self.extract_ticket_number(user_input)
+            ticket_number = extract_ticket_number(user_input)
             if ticket_number:
-                ticket_info = self.get_incident_ticket(ticket_number)
-                if ticket_info:
-                    return f"Ticket ID: {ticket_info.get('number')}, Description: {ticket_info.get('short_description')}, Status: {ticket_info.get('state')}"
+                ticket = get_incident_ticket(ticket_number)
+                if ticket:
+                    return f"Ticket ID: {ticket.get('number')}, Description: {ticket.get('short_description')}, Status: {ticket.get('state')}"
                 else:
-                    return f"Ticket {ticket_number} not found."
+                    return f"Ticket not found for number: {ticket_number}"
             else:
-                return "No ticket number found in the input."
+                return "Please provide a valid ticket number."
         else:
             if user_input == "ERROR":
                 return "Sorry, come again?"
@@ -109,6 +134,15 @@ nlp = transformers.pipeline("conversational", model="microsoft/DialoGPT-medium")
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 
+def extract_ticket_number(text):
+    pattern = r'INC\d{7}'
+    ticket_number = re.search(pattern, text)
+    if ticket_number:
+        return ticket_number.group()
+    else:
+        return None
+
+
 @app.route('/', methods=['GET', 'POST'])
 def chat():
     if request.method == 'POST':
@@ -117,9 +151,7 @@ def chat():
 
         try:
             ai.text = message
-
             response = ai.process_user_request(ai.text)
-
             ai.text_to_speech(response)
             return jsonify({'response': response})
         except Exception as e:
